@@ -7,30 +7,69 @@
 import os
 
 import omni.isaac.lab.sim as sim_utils
+from omni.isaac.lab.actuators import DCMotorCfg
 from omni.isaac.lab.assets import AssetBaseCfg
+from omni.isaac.lab.assets.articulation import ArticulationCfg
 from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sensors import CameraCfg, ContactSensorCfg, RayCasterCfg, patterns
 from omni.isaac.lab.utils import configclass
 from omni.viplanner.utils import UnRealImporterCfg
 
-##
-# Pre-defined configs
-##
 # isort: off
-from omni.isaac.lab_assets.anymal import ANYMAL_C_CFG
 from .base_cfg import ViPlannerBaseCfg
 from ..viplanner import DATA_DIR
 
-##
-# Scene definition
-##
 
+LIMO_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path="/home/recklessdriver/projects/Models/limo0.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=4,
+            solver_velocity_iteration_count=0,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.2),
+        joint_pos={
+            "front_left_wheel": 0.0,
+            "front_right_wheel": 0.0,
+            "rear_left_wheel": 0.0,
+            "rear_right_wheel": 0.0,
+        },
+    ),
+    actuators={
+        "wheels": DCMotorCfg(
+            joint_names_expr=[
+                "front_left_wheel",
+                "front_right_wheel",
+                "rear_left_wheel",
+                "rear_right_wheel",
+            ],
+            effort_limit=400.0,
+            saturation_effort=400.0,
+            velocity_limit=100.0,
+            stiffness={".*": 0.0},
+            damping={".*": 10.0},
+        ),
+    },
+    soft_joint_pos_limit_factor=1.0,
+)
 
 @configclass
 class TerrainSceneCfg(InteractiveSceneCfg):
-    """Configuration for the terrain scene with a legged robot."""
+    """Configuration for the Carla scene with a Limo differential-drive robot."""
 
-    # ground terrain
     terrain = UnRealImporterCfg(
         prim_path="/World/Carla",
         physics_material=sim_utils.RigidBodyMaterialCfg(
@@ -39,8 +78,7 @@ class TerrainSceneCfg(InteractiveSceneCfg):
             static_friction=1.0,
             dynamic_friction=1.0,
         ),
-        # NOTE: this path should be absolute to load the textures correctly
-        usd_path="${USER_PATH_TO_USD}/carla.usd",
+        usd_path="/home/recklessdriver/projects/viplanner/models/viplanner/carla_export/new_carla_export/carla.usd",
         groundplane=True,
         cw_config_file=os.path.join(DATA_DIR, "town01", "cw_multiply_cfg.yml"),
         sem_mesh_to_class_map=os.path.join(DATA_DIR, "town01", "keyword_mapping.yml"),
@@ -49,20 +87,23 @@ class TerrainSceneCfg(InteractiveSceneCfg):
         axis_up="Z",
     )
 
-    # robots
-    robot = ANYMAL_C_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = LIMO_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-    # sensors
     height_scanner = RayCasterCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
+        prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.25)),
         attach_yaw_only=True,
         pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
         debug_vis=True,
         mesh_prim_paths=["/World/GroundPlane"],
     )
-    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, debug_vis=False)
-    # lights
+
+    contact_forces = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/limo/.*",
+        history_length=3,
+        debug_vis=False,
+    )
+
     light = AssetBaseCfg(
         prim_path="/World/light",
         spawn=sim_utils.DistantLightCfg(
@@ -70,10 +111,13 @@ class TerrainSceneCfg(InteractiveSceneCfg):
             intensity=1000.0,
         ),
     )
-    # camera
+
     depth_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base/depth_camera",
-        offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(-0.5, 0.5, -0.5, 0.5)),
+        prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link/depth_camera",
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.20, 0.0, 0.15),
+            rot=(-0.5, 0.5, -0.5, 0.5),
+        ),
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=1.93,
             horizontal_aperture=3.8,
@@ -83,10 +127,12 @@ class TerrainSceneCfg(InteractiveSceneCfg):
         data_types=["distance_to_image_plane"],
     )
 
-    # NOTE: remove "rgb" from the data_types to only render the semantic segmentation
     semantic_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base/semantic_camera",
-        offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(-0.5, 0.5, -0.5, 0.5)),
+        prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link/semantic_camera",
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.20, 0.0, 0.15),
+            rot=(-0.5, 0.5, -0.5, 0.5),
+        ),
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=1.93,
             horizontal_aperture=3.8,
@@ -98,24 +144,17 @@ class TerrainSceneCfg(InteractiveSceneCfg):
     )
 
 
-##
-# Environment configuration
-##
-
-
 @configclass
 class ViPlannerCarlaCfg(ViPlannerBaseCfg):
-    """Configuration for the locomotion velocity-tracking environment."""
+    """Configuration for the Carla navigation environment."""
 
-    # Scene settings
     scene: TerrainSceneCfg = TerrainSceneCfg(num_envs=1, env_spacing=1.0, replicate_physics=False)
 
     def __post_init__(self):
-        """Post initialization."""
         super().__post_init__()
-        # adapt viewer
+
         self.viewer.eye = (133, 127.5, 8.5)
         self.viewer.lookat = (125.5, 120, 1.0)
-        # change ANYmal position
-        self.scene.robot.init_state.pos = (125.5, 118.5, 0.8)
+
+        self.scene.robot.init_state.pos = (125.5, 330.5, 0.001)
         self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, -0.707)

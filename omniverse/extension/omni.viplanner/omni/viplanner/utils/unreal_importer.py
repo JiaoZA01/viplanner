@@ -77,7 +77,12 @@ class UnRealImporter(TerrainImporter):
         if key in self.meshes:
             raise ValueError(f"Mesh with key {key} already exists. Existing keys: {self.meshes.keys()}.")
         # add the prim path
-        cfg = sim_utils.UsdFileCfg(usd_path=usd_path)
+        if isinstance(self.cfg.scale, (tuple, list)):
+            mesh_scale = self.cfg.scale
+        else:
+            mesh_scale = (self.cfg.scale, self.cfg.scale, self.cfg.scale)
+            
+        cfg = sim_utils.UsdFileCfg(usd_path=usd_path, scale=mesh_scale)
 
         if self.cfg.axis_up == "Y" or self.cfg.axis_up == "y":
             cfg.func(self.cfg.prim_path + f"/{key}", cfg, orientation=(0.2759, 0.4469, 0.4469, 0.7240))

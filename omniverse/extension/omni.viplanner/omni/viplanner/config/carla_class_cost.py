@@ -16,11 +16,13 @@ TERRAIN_LOSS = 1.0
 @configclass
 class CarlaSemanticCostMapping:
     # Mapping from Carla categories to some example cost values
+
+
     void: float = OBSTACLE_COST
-    road: float = ROAD_LOSS
-    sidewalk: float = TRAVERSABLE_COST
+    road: float = TRAVERSABLE_COST
+    sidewalk: float = OBSTACLE_COST
     crosswalk: float = TRAVERSABLE_COST
-    floor: float = TRAVERSABLE_COST
+    floor: float = OBSTACLE_COST
     vehicle: float = OBSTACLE_COST
     building: float = OBSTACLE_COST
     wall: float = OBSTACLE_COST
@@ -30,7 +32,7 @@ class CarlaSemanticCostMapping:
     traffic_light: float = OBSTACLE_COST
     bench: float = OBSTACLE_COST
     vegetation: float = OBSTACLE_COST
-    terrain: float = TERRAIN_LOSS
+    terrain: float = OBSTACLE_COST
     water_surface: float = OBSTACLE_COST
     sky: float = OBSTACLE_COST
     dynamic: float = OBSTACLE_COST

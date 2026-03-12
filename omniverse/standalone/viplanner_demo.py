@@ -15,7 +15,8 @@ import argparse
 # omni-isaac-lab
 from omni.isaac.lab.app import AppLauncher
 
-# add argparse arguments
+
+
 parser = argparse.ArgumentParser(description="This script demonstrates how to use the camera sensor.")
 parser.add_argument("--conv_distance", default=0.2, type=float, help="Distance for a goal considered to be reached.")
 parser.add_argument(
@@ -60,7 +61,11 @@ def main():
         goal_pos = torch.tensor([8.0, -13.5, 1.0])
     elif args_cli.scene == "carla":
         env_cfg = ViPlannerCarlaCfg(seed=1234)
-        goal_pos = torch.tensor([137, 111.0, 1.0])
+
+        
+        goal_pos = torch.tensor([135.0, 335.0, 0.0])
+            #the above is added so that if you input valid closer goals, we use it or
+            #default it back to 120 335 1
     elif args_cli.scene == "warehouse":
         env_cfg = ViPlannerWarehouseCfg(seed=1234)
         goal_pos = torch.tensor([3, -4.5, 1.0])
@@ -104,7 +109,20 @@ def main():
     viplanner = VIPlannerAlgo(model_dir=args_cli.model_dir, device=env.device)
 
     goals = torch.tensor(goal_pos.Get(), device=env.device).repeat(env.num_envs, 1)
+    
+    
+    #modified so that with the even closer local goal, we print debugs:
+    robot_start = env.scene["robot"].data.root_pos_w[0].clone()
+    goal_start = goals[0].clone()
+    start_dist = torch.norm(robot_start[:2] - goal_start[:2], p=2)
 
+    print(f"[DEBUG] Robot start position: {robot_start.tolist()}")
+    print(f"[DEBUG] Goal position:        {goal_start.tolist()}")
+    print(f"[DEBUG] Start XY distance:    {float(start_dist):.3f}")
+    
+    
+    
+    
     # initial paths
     _, paths, fear = viplanner.plan_dual(
         obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goals
@@ -122,15 +140,23 @@ def main():
 
         # apply planner
         goals = torch.tensor(goal_pos.Get(), device=env.device).repeat(env.num_envs, 1)
-        if torch.any(
-            torch.norm(obs["planner_transform"]["cam_position"] - goals)
-            > viplanner.train_config.data_cfg[0].max_goal_distance
-        ):
-            print(
-                f"[WARNING]: Max goal distance is {viplanner.train_config.data_cfg[0].max_goal_distance} but goal is {torch.norm(obs['planner_transform']['cam_position'] - goals)} away from camera position! Please select new goal!"
-            )
+       
+       
+       
+        curr_goal_dist = torch.norm(obs["planner_transform"]["cam_position"] - goals)
+        max_goal_dist = viplanner.train_config.data_cfg[0].max_goal_distance
+
+        if torch.any(curr_goal_dist > max_goal_dist):
+            print(f"[WARNING] max_goal_distance = {max_goal_dist}")
+            print(f"[WARNING] current goal distance = {curr_goal_dist}")
+            print("[WARNING] Goal is too far from the camera/robot. Please select a nearer goal.")
             env.sim.pause()
             continue
+       
+       
+       
+       
+       
 
         goal_cam_frame = viplanner.goal_transformer(
             goals, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
@@ -138,13 +164,20 @@ def main():
         _, paths, fear = viplanner.plan_dual(
             obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goal_cam_frame
         )
+        raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
+
+        # [DEBUG] Print detected semantic IDs
+        unique_ids = torch.unique(raw_semantic)
+        print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
+
+
         paths = viplanner.path_transformer(
             paths, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
         )
 
         # draw path
         viplanner.debug_draw(paths, fear, goals)
-
+        print(f"[Demo] Path End (World): {paths[0, 0, :2].cpu().numpy()}")
 
 if __name__ == "__main__":
     # Run the main function
