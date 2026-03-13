@@ -63,7 +63,7 @@ def main():
         env_cfg = ViPlannerCarlaCfg(seed=1234)
 
         
-        goal_pos = torch.tensor([135.0, 335.0, 0.0])
+        goal_pos = torch.tensor([329, 347, 0.8])
             #the above is added so that if you input valid closer goals, we use it or
             #default it back to 120 335 1
     elif args_cli.scene == "warehouse":
@@ -127,6 +127,8 @@ def main():
     _, paths, fear = viplanner.plan_dual(
         obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goals
     )
+    
+    fear_print_counter = 0
 
     # Simulate physics
     while simulation_app.is_running():
@@ -164,11 +166,19 @@ def main():
         _, paths, fear = viplanner.plan_dual(
             obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goal_cam_frame
         )
+        
+        fear_value = fear[0].item() if fear.numel() > 0 else 0.0
+        
+        fear_print_counter += 1
+        if fear_print_counter % 5 == 0:
+            print(f"[Fear] {fear_value:.4f}")
+        
+        
         raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
 
         # [DEBUG] Print detected semantic IDs
         unique_ids = torch.unique(raw_semantic)
-        print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
+        #print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
 
 
         paths = viplanner.path_transformer(
@@ -177,7 +187,7 @@ def main():
 
         # draw path
         viplanner.debug_draw(paths, fear, goals)
-        print(f"[Demo] Path End (World): {paths[0, 0, :2].cpu().numpy()}")
+        #print(f"[Demo] Path End (World): {paths[0, 0, :2].cpu().numpy()}")
 
 if __name__ == "__main__":
     # Run the main function

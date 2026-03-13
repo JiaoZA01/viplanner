@@ -271,6 +271,9 @@ class UnRealImporter(TerrainImporter):
 
         # get town prim and all its meshes
         town_prim = vehicle_cfg.pop("town_prim")
+        print(f"Town Prim Position: {prim_utils.get_prim_at_path(f'{self.cfg.prim_path}/terrain/{town_prim}').GetAttribute('xformOp:translate').Get()}")
+
+        
         mesh_prims: dict = prim_utils.get_prim_at_path(f"{self.cfg.prim_path}/terrain/{town_prim}").GetChildren()
         mesh_prims_name = [mesh_prim_single.GetName() for mesh_prim_single in mesh_prims]
 
@@ -301,6 +304,7 @@ class UnRealImporter(TerrainImporter):
                     prim = prim_utils.get_prim_at_path(
                         os.path.join(self.cfg.prim_path + "/terrain", town_prim, single_mesh + key + f"_cp{idx}")
                     )
+                    # print(f"terrain position: {prim.GetAttribute('xformOp:translate').Get()}")
                     xform = UsdGeom.Mesh(prim).AddTranslateOp()
                     xform.Set(Gf.Vec3d(translation[0], translation[1], translation[2]))
 

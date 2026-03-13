@@ -137,18 +137,21 @@ class NavigationAction(ActionTerm):
                 v_cmd = torch.zeros_like(x_err)
                 omega_cmd = torch.zeros_like(angle_error)
                 if self._debug_counter % 20 == 0:
-                    print(f"[NavAction] GOAL: {dist_to_final_goal:.2f}m), stop")
+                    pass
+                    #print(f"[NavAction] GOAL: {dist_to_final_goal:.2f}m), stop")
             else:
-                v_raw = torch.clamp(2.0 * x_err, 0.0, 1.0) 
-                w_raw = torch.clamp(5.0 * angle_error, -2.0, 2.0)
+                v_raw = torch.clamp(1.2 * x_err, 0.0, 1.0) 
+                w_raw = torch.clamp(5.0 * angle_error, -1.5, 1.5)
                 
-                turn_in_place = torch.abs(angle_error) > 0.5
-                v_cmd = torch.where(turn_in_place, torch.zeros_like(v_raw), v_raw)
+             
+                v_scale = torch.clamp(1.0 - torch.abs(angle_error) / 0.6, 0.0, 1.0)
+                v_cmd = v_raw * v_scale
                 omega_cmd = w_raw
                 
                 if self._debug_counter % 20 == 0:
-                    print(f"[NavAction] Robot: {root_pos_w[0, :2].cpu().numpy()} -> Target: {target_pos_w_single.cpu().numpy()}")
-                    print(f"            Error: x={x_err[0]:.2f}, y={y_err[0]:.2f} | Cmd: v={v_cmd[0]:.2f}, w={omega_cmd[0]:.2f}")
+                    pass
+                    #print(f"[NavAction] Robot: {root_pos_w[0, :2].cpu().numpy()} -> Target: {target_pos_w_single.cpu().numpy()}")
+                    #print(f"            Error: x={x_err[0]:.2f}, y={y_err[0]:.2f} | Cmd: v={v_cmd[0]:.2f}, w={omega_cmd[0]:.2f}")
 
             self._low_level_actions[:, 0] = v_cmd
             self._low_level_actions[:, 1] = omega_cmd

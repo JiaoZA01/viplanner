@@ -155,7 +155,7 @@ class CommandsCfg:
 
     vel_command: mdp.PathFollowerCommandGeneratorCfg = mdp.PathFollowerCommandGeneratorCfg(
         robot_attr="robot",
-        lookAheadDistance=0.45, #I am changing lookahead distance
+        lookAheadDistance=0.7, #I am changing lookahead distance
         debug_vis=True,
         maxSpeed=10,
     )
