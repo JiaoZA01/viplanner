@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import torch
@@ -74,6 +75,9 @@ def _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES):
         wy = mgy * _MEM_RES + _MEM_RES * 0.5
         # World → camera frame
         xc, zc = _world_to_cam_2d(wx, wy, cam_pos_xy, R)
+        # Skip obstacles that are now behind the robot (zc <= 0)
+        if zc <= 0:
+            continue
         # Camera frame → local grid index
         grid_x = int(xc / CELL_RES + X_DIM / 2)
         grid_y = int(zc / CELL_RES)
@@ -131,6 +135,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     d_np = depth_tensor.squeeze().cpu().numpy()
     H, W = d_np.shape[:2]
     fx, cx = intrinsics[0, 0].item(), intrinsics[0, 2].item()
+    fy, cy = intrinsics[1, 1].item(), intrinsics[1, 2].item()
 
     step = 8
     for v in range(0, H, step):
@@ -138,6 +143,14 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             z = d_np[v, u]
             if z <= 0.1 or z > 9.0:
                 continue
+
+            # Prevent mapping the floor/ground as an obstacle:
+            # Project vertical coordinate 'y' (+y is downwards in standard CV)
+            y = (v - cy) * z / fy
+            # Adjust 0.5 threshold based on your actual camera mounting height.
+            if y > 0.5:  
+                continue
+
             x = (u - cx) * z / fx
             grid_x = int(x / CELL_RES + X_DIM / 2)
             grid_y = int(z / CELL_RES)
@@ -146,8 +159,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
                 # Update persistent world memory
                 if R is not None:
                     wx, wy = _cam_to_world_2d(x, z, cam_pos_xy, R)
-                    mgx = int(wx / _MEM_RES)
-                    mgy = int(wy / _MEM_RES)
+                    mgx = math.floor(wx / _MEM_RES)
+                    mgy = math.floor(wy / _MEM_RES)
                     _world_memory[(mgx, mgy)] = True
 
     # ------------------------------------------------------------------
@@ -156,7 +169,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     if goal_cam[2].item() < 0:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
         turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
-        return torch.tensor(turn_path, dtype=torch.float32, device=depth_tensor.device)
+        final_path = [[0.0, 0.0, 0.0]] + turn_path
+        return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
 
     # ------------------------------------------------------------------
     # Setup start / goal in local grid
@@ -197,7 +211,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
         scanForObstacles(mem_graph, mem_queue, s_start, 100, mem_k_m)
         computeShortestPath(mem_graph, mem_queue, s_start, mem_k_m)
 
-        path_points = _extract_path(mem_graph, s_start, s_goal, X_DIM, CELL_RES, depth_tensor.device)
+        path_points = _extract_path(mem_graph, s_start, s_goal, X_DIM, CELL_RES)
         if path_points:
             print(f"[D* Memory] Found path via memory ({len(path_points)} waypoints)")
         else:
@@ -209,6 +223,12 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     if not path_points:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
         turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
-        return torch.tensor(turn_path, dtype=torch.float32, device=depth_tensor.device)
+        path_points = turn_path
+        
+    # Prepend robot origin to path. This ensures the output path has at least length >= 2, 
+    # which prevents PyTorch's linear interpolation from crashing in `viplanner_demo.py`.
+    final_path = [[0.0, 0.0, 0.0]] + path_points
+    if len(final_path) < 2:
+        final_path.append(final_path[-1])
 
-    return torch.tensor(path_points, device=depth_tensor.device)
+    return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
