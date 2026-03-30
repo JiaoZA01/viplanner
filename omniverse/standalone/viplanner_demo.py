@@ -175,7 +175,7 @@ def main():
         
         # [18744] Run D* Lite Planner
         # Using the first environment's data (index 0) for the demo
-        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic)
+        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic, raw_cam_position[0], raw_cam_orientation[0])
 
         # [18744] Run ViPlanner
         _, paths, fear = viplanner.plan_dual(
