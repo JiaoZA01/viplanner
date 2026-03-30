@@ -146,7 +146,7 @@ def main():
                 env.sim.step(render=~args_cli.headless)
                 continue
 
-            obs = env.step(action=paths.view(paths.shape[0], -1))[0]
+            obs = env.step(action=paths.reshape(paths.shape[0], -1))[0]
 
         # apply planner
         goals = torch.tensor(goal_pos.Get(), device=env.device).repeat(env.num_envs, 1)
@@ -185,12 +185,21 @@ def main():
         # [18744] convert waypoints from the camera's frame into the world's coordinate frame
         paths = viplanner.path_transformer(
             paths, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
-        )     
+        )
+        num_waypoints = paths.shape[1]  # Save expected waypoint count for D* Lite resampling
 
         # [18744] Transform D* Lite path to world frame
         d_lite_path_world = viplanner.path_transformer(
             d_lite_path_cam.unsqueeze(0), raw_cam_position[0:1], raw_cam_orientation[0:1]
-        )  
+        )
+        # Resample D* Lite path to match VIPlanner's fixed waypoint count
+        if d_lite_path_world.shape[1] != num_waypoints:
+            d_lite_path_world = torch.nn.functional.interpolate(
+                d_lite_path_world.permute(0, 2, 1),  # [1, 3, N]
+                size=num_waypoints,
+                mode="linear",
+                align_corners=True,
+            ).permute(0, 2, 1)  # [1, num_waypoints, 3]
         
         fear_value = fear[0].item() if fear.numel() > 0 else 0.0
         

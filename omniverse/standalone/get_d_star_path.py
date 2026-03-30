@@ -25,8 +25,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics):
     graph = GridWorld(X_DIM, Y_DIM)
     
     # Map Depth to Obstacles (Simplified Downsampling)
-    d_np = depth_tensor.cpu().numpy()
-    H, W = d_np.shape
+    d_np = depth_tensor.squeeze().cpu().numpy()
+    H, W = d_np.shape[:2]
     fx, cx = intrinsics[0, 0].item(), intrinsics[0, 2].item()
     
     # Sparse sampling for speed
@@ -46,6 +46,14 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics):
             
             if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
                 graph.cells[grid_y][grid_x] = -1 # Mark obstacle
+
+    # [18744] Goal is behind the robot (negative Z in camera frame) — D* Lite grid only
+    # covers the forward half-space, so plan a turn-in-place arc toward the goal instead.
+    if goal_cam[2].item() < 0:
+        # Turn toward whichever side the goal is on (left = negative X, right = positive X)
+        turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
+        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        return torch.tensor(turn_path, dtype=torch.float32, device=depth_tensor.device)
 
     # Setup Start and Goal
     s_start = f"x{int(X_DIM/2)}y0"

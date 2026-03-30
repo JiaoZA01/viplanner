@@ -90,7 +90,7 @@ class TerrainSceneCfg(InteractiveSceneCfg):
     depth_camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link/base/depth_camera",
         offset=CameraCfg.OffsetCfg(
-            pos=(0.51, 0.0, 0.1),
+            pos=(0.65, 0.0, 0.4),
             rot=(-0.5, 0.5, -0.5, 0.5),
         ),
         spawn=sim_utils.PinholeCameraCfg(
@@ -105,7 +105,7 @@ class TerrainSceneCfg(InteractiveSceneCfg):
     semantic_camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link/base/semantic_camera",
         offset=CameraCfg.OffsetCfg(
-            pos=(0.51, 0.0, 0.1),
+            pos=(0.65, 0.0, 0.4),
             rot=(-0.5, 0.5, -0.5, 0.5),
         ),
         spawn=sim_utils.PinholeCameraCfg(

@@ -261,9 +261,14 @@ class PathFollowerCommandGenerator(CommandTerm):
         # -- resolve the scales and quaternions
         vel_des_arrow_scale, vel_des_arrow_quat = self._resolve_xy_velocity_to_arrow(self.command[:, :2])
         vel_arrow_scale, vel_arrow_quat = self._resolve_xy_velocity_to_arrow(self.robot.data.root_lin_vel_b[:, :2])
+
+        # Transform the arrow orientations from the base frame to the world frame
+        vel_des_arrow_quat_w = math_utils.quat_mul(self.robot.data.root_quat_w, vel_des_arrow_quat)
+        vel_arrow_quat_w = math_utils.quat_mul(self.robot.data.root_quat_w, vel_arrow_quat)
+
         # display markers
-        self.base_vel_goal_visualizer.visualize(base_pos_w, vel_des_arrow_quat, vel_des_arrow_scale)
-        self.base_vel_visualizer.visualize(base_pos_w, vel_arrow_quat, vel_arrow_scale)
+        self.base_vel_goal_visualizer.visualize(base_pos_w, vel_des_arrow_quat_w, vel_des_arrow_scale)
+        self.base_vel_visualizer.visualize(base_pos_w, vel_arrow_quat_w, vel_arrow_scale)
 
     """
     Internal helpers.
