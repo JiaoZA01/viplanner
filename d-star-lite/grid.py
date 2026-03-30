@@ -47,21 +47,21 @@ class GridWorld(Graph):
 
     def generateGraphFromGrid(self):
         edge = 1
-        for i in range(len(self.cells)):
+        for i in range(len(self.cells)):      # i = row index (y direction)
             row = self.cells[i]
-            for j in range(len(row)):
-                # print('graph node ' + str(i) + ',' + str(j))
-                node = Node('x' + str(i) + 'y' + str(j))
+            for j in range(len(row)):         # j = col index (x direction)
+                # Node name convention: x=col (j), y=row (i)
+                node = Node('x' + str(j) + 'y' + str(i))
                 if i > 0:  # not top row
-                    node.parents['x' + str(i - 1) + 'y' + str(j)] = edge
-                    node.children['x' + str(i - 1) + 'y' + str(j)] = edge
+                    node.parents['x' + str(j) + 'y' + str(i - 1)] = edge
+                    node.children['x' + str(j) + 'y' + str(i - 1)] = edge
                 if i + 1 < self.y_dim:  # not bottom row
-                    node.parents['x' + str(i + 1) + 'y' + str(j)] = edge
-                    node.children['x' + str(i + 1) + 'y' + str(j)] = edge
+                    node.parents['x' + str(j) + 'y' + str(i + 1)] = edge
+                    node.children['x' + str(j) + 'y' + str(i + 1)] = edge
                 if j > 0:  # not left col
-                    node.parents['x' + str(i) + 'y' + str(j - 1)] = edge
-                    node.children['x' + str(i) + 'y' + str(j - 1)] = edge
+                    node.parents['x' + str(j - 1) + 'y' + str(i)] = edge
+                    node.children['x' + str(j - 1) + 'y' + str(i)] = edge
                 if j + 1 < self.x_dim:  # not right col
-                    node.parents['x' + str(i) + 'y' + str(j + 1)] = edge
-                    node.children['x' + str(i) + 'y' + str(j + 1)] = edge
-                self.graph['x' + str(i) + 'y' + str(j)] = node
+                    node.parents['x' + str(j + 1) + 'y' + str(i)] = edge
+                    node.children['x' + str(j + 1) + 'y' + str(i)] = edge
+                self.graph['x' + str(j) + 'y' + str(i)] = node
