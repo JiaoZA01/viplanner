@@ -47,6 +47,9 @@ from omni.viplanner.config import (
 from omni.viplanner.viplanner import VIPlannerAlgo
 from pxr import UsdGeom
 
+"""D start Lite"""
+from get_d_star_path import get_d_star_path
+
 """
 Main
 """
@@ -128,7 +131,12 @@ def main():
         obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goals
     )
     
-    fear_print_counter = 0
+    # fear_print_counter = 0
+
+    # [18744] Fear reaction tracking for stuck detection
+    fear_buffer = 0
+    buffer_size = 3  # Number of consecutive high-fear frames to trigger reaction
+    is_fear_reaction = False
 
     # Simulate physics
     while simulation_app.is_running():
@@ -138,7 +146,7 @@ def main():
                 env.sim.step(render=~args_cli.headless)
                 continue
 
-            obs = env.step(action=paths.view(paths.shape[0], -1))[0]
+            obs = env.step(action=paths.reshape(paths.shape[0], -1))[0]
 
         # apply planner
         goals = torch.tensor(goal_pos.Get(), device=env.device).repeat(env.num_envs, 1)
@@ -155,35 +163,75 @@ def main():
             env.sim.pause()
             continue
        
-       
-       
-       
-       
-
         goal_cam_frame = viplanner.goal_transformer(
             goals, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
         )
+
+        # [18744] Get raw sensor data for D* Lite
+        raw_depth = obs["planner_image"]["depth_measurement"]               # Shape: [Num_Envs, H, W]
+        raw_cam_position = obs["planner_transform"]["cam_position"]         # Shape: [Num_Envs, 3]
+        raw_cam_orientation = obs["planner_transform"]["cam_orientation"]   # Shape: [Num_Envs, 4]
+        
+        
+        # [18744] Run D* Lite Planner
+        # Using the first environment's data (index 0) for the demo
+        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic)
+
+        # [18744] Run ViPlanner
         _, paths, fear = viplanner.plan_dual(
             obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goal_cam_frame
         )
-        
-        fear_value = fear[0].item() if fear.numel() > 0 else 0.0
-        
-        fear_print_counter += 1
-        if fear_print_counter % 5 == 0:
-            print(f"[Fear] {fear_value:.4f}")
-        
-        
-        raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
 
-        # [DEBUG] Print detected semantic IDs
-        unique_ids = torch.unique(raw_semantic)
-        #print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
-
-
+        # [18744] convert waypoints from the camera's frame into the world's coordinate frame
         paths = viplanner.path_transformer(
             paths, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
         )
+        num_waypoints = paths.shape[1]  # Save expected waypoint count for D* Lite resampling
+
+        # [18744] Transform D* Lite path to world frame
+        d_lite_path_world = viplanner.path_transformer(
+            d_lite_path_cam.unsqueeze(0), raw_cam_position[0:1], raw_cam_orientation[0:1]
+        )
+        # Resample D* Lite path to match VIPlanner's fixed waypoint count
+        if d_lite_path_world.shape[1] != num_waypoints:
+            d_lite_path_world = torch.nn.functional.interpolate(
+                d_lite_path_world.permute(0, 2, 1),  # [1, 3, N]
+                size=num_waypoints,
+                mode="linear",
+                align_corners=True,
+            ).permute(0, 2, 1)  # [1, num_waypoints, 3]
+        
+        fear_value = fear[0].item() if fear.numel() > 0 else 0.0
+        
+        # fear_print_counter += 1
+        # if fear_print_counter % 5 == 0:
+        #     print(f"[Fear] {fear_value:.4f}")
+
+        if fear_value > 0.7:
+            fear_buffer = min(fear_buffer + 1, buffer_size + 1)
+            print(f"[WARNING]: High fear detected: {fear_value:.3f} (buffer: {fear_buffer}/{buffer_size})")
+        else:
+            fear_buffer = max(fear_buffer - 1, 0)
+        
+        # Trigger fear reaction if buffer exceeds threshold
+        if fear_buffer > buffer_size:
+            if not is_fear_reaction:
+                print(f"[STUCK DETECTED]: Fear threshold exceeded! Switching to D* Lite fallback planner.")
+                print(f"[STUCK DETECTED]: Fear value: {fear_value:.3f}")
+                is_fear_reaction = True
+            # [18744] FALLBACK: Use D* Lite path when neural network is uncertain
+            paths = d_lite_path_world
+            print(f"[FALLBACK]: Using D* Lite path instead of neural network path")
+        elif fear_buffer <= 0:
+            if is_fear_reaction:
+                print(f"[RECOVERY]: Fear subsided, resuming neural network planner.")
+                is_fear_reaction = False
+        
+        # raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
+
+        # [DEBUG] Print detected semantic IDs
+        # unique_ids = torch.unique(raw_semantic)
+        #print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
 
         # draw path
         viplanner.debug_draw(paths, fear, goals)
