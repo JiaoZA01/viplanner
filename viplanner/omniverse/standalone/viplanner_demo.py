@@ -175,7 +175,7 @@ def main():
         
         # [18744] Run D* Lite Planner
         # Using the first environment's data (index 0) for the demo
-        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic)
+        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic, raw_cam_position[0], raw_cam_orientation[0])
 
         # [18744] Run ViPlanner
         _, paths, fear = viplanner.plan_dual(
@@ -222,10 +222,11 @@ def main():
             # [18744] FALLBACK: Use D* Lite path when neural network is uncertain
             paths = d_lite_path_world
             print(f"[FALLBACK]: Using D* Lite path instead of neural network path")
-        elif fear_buffer <= 0:
+        else:
             if is_fear_reaction:
-                print(f"[RECOVERY]: Fear subsided, resuming neural network planner.")
+                print(f"[RECOVERY]: Fear subsided (buffer: {fear_buffer}/{buffer_size}), resuming neural network planner.")
                 is_fear_reaction = False
+            # VIPlanner path is already in `paths` — no override needed
         
         # raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
 

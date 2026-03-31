@@ -134,4 +134,4 @@ class ViPlannerCarlaCfg(ViPlannerBaseCfg):
         self.viewer.lookat = (329, 332, 0)
 
         self.scene.robot.init_state.pos = (329, 332, 0.8)
-        self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, -0.707)
+        self.scene.robot.init_state.rot = (0.707, 0.0, 0.0, 0.707)
