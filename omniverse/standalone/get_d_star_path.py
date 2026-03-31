@@ -116,8 +116,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     """
     global _world_memory
 
-    X_DIM, Y_DIM = 40, 40
-    CELL_RES = 0.25  # 0.25 m/cell → 10 m x 10 m local grid
+    X_DIM, Y_DIM = 40, 60
+    CELL_RES = 0.25  # 0.25 m/cell -> 10 m (width) x 15 m (forward) local grid
 
     # ------------------------------------------------------------------
     # Precompute rotation matrix and camera XY position for frame transforms
@@ -141,7 +141,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     for v in range(0, H, step):
         for u in range(0, W, step):
             z = d_np[v, u]
-            if z <= 0.1 or z > 9.0:
+            if z <= 0.1 or z > 14.0:
                 continue
 
             # Prevent mapping the floor/ground as an obstacle:
@@ -164,6 +164,20 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
                     _world_memory[(mgx, mgy)] = True
 
     # ------------------------------------------------------------------
+    # Collect occupied grid cells for visualisation (camera frame, deduplicated)
+    # ------------------------------------------------------------------
+    obs_cam_points = []
+    for row in range(Y_DIM):
+        for col in range(X_DIM):
+            if graph.cells[row][col] < 0:
+                obs_cam_points.append([(col - X_DIM / 2) * CELL_RES, 0.0, row * CELL_RES])
+    obs_cam_tensor = (
+        torch.tensor(obs_cam_points, dtype=torch.float32, device=depth_tensor.device)
+        if obs_cam_points
+        else torch.zeros((0, 3), dtype=torch.float32, device=depth_tensor.device)
+    )
+
+    # ------------------------------------------------------------------
     # Handle goal behind robot
     # ------------------------------------------------------------------
     if goal_cam[2].item() < 0:
@@ -171,7 +185,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
         # Z is set to 0.0 so the car pivots locally rather than driving forward
         turn_path = [[turn_dir * i * CELL_RES, 0.0, 0.0] for i in range(1, 6)]
         final_path = [[0.0, 0.0, 0.0]] + turn_path
-        return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
+        return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device), obs_cam_tensor
 
     # ------------------------------------------------------------------
     # Setup start / goal in local grid
@@ -233,4 +247,4 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     if len(final_path) < 2:
         final_path.append(final_path[-1])
 
-    return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
+    return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device), obs_cam_tensor

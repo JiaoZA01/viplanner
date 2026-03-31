@@ -50,6 +50,43 @@ from pxr import UsdGeom
 """D start Lite"""
 from get_d_star_path import get_d_star_path
 
+"""Debug draw"""
+from omni.isaac.debug_draw import _debug_draw
+_draw = _debug_draw.acquire_debug_draw_interface()
+
+
+def draw_dstar_debug(obs_world, d_lite_path_world, using_fallback, draw_z):
+    """
+    Draw D* Lite perception + plan in the Isaac Sim viewport (top-view overlay).
+    obs_world:         [N, 3] tensor — obstacle cell centres in world frame
+    d_lite_path_world: [1, M, 3] tensor — D* Lite path in world frame
+    using_fallback:    bool — True when robot is using D* Lite instead of VIPlanner
+    draw_z:            float — world Z height to draw at (slightly above ground)
+    """
+    _draw.clear_lines()
+    _draw.clear_points()
+
+    # --- Obstacle grid cells (red squares = perceived obstacles) ---
+    if obs_world.shape[0] > 0:
+        obs_np = obs_world.cpu().numpy()
+        positions = [(float(p[0]), float(p[1]), draw_z) for p in obs_np]
+        # Active fallback → brighter red; normal → muted red
+        alpha = 0.9 if using_fallback else 0.5
+        colors = [(0.9, 0.15, 0.15, alpha)] * len(positions)
+        sizes  = [6.0] * len(positions)
+        _draw.draw_points(positions, colors, sizes)
+
+    # --- D* Lite path (blue when standby, bright cyan when active fallback) ---
+    path_np = d_lite_path_world[0].cpu().numpy()
+    if len(path_np) > 1:
+        starts = [(float(p[0]), float(p[1]), draw_z + 0.05) for p in path_np[:-1]]
+        ends   = [(float(p[0]), float(p[1]), draw_z + 0.05) for p in path_np[1:]]
+        r, g, b = (0.0, 0.9, 1.0) if using_fallback else (0.2, 0.4, 1.0)
+        thickness = 6.0 if using_fallback else 3.0
+        colors = [(r, g, b, 1.0)] * len(starts)
+        thicknesses = [thickness] * len(starts)
+        _draw.draw_lines(starts, ends, colors, thicknesses)
+
 """
 Main
 """
@@ -175,7 +212,7 @@ def main():
         
         # [18744] Run D* Lite Planner
         # Using the first environment's data (index 0) for the demo
-        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic, raw_cam_position[0], raw_cam_orientation[0])
+        d_lite_path_cam, d_lite_obs_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic, raw_cam_position[0], raw_cam_orientation[0])
 
         # [18744] Run ViPlanner
         _, paths, fear = viplanner.plan_dual(
@@ -192,6 +229,14 @@ def main():
         d_lite_path_world = viplanner.path_transformer(
             d_lite_path_cam.unsqueeze(0), raw_cam_position[0:1], raw_cam_orientation[0:1]
         )
+
+        # [18744] Transform D* Lite obstacle cells to world frame for visualisation
+        if d_lite_obs_cam.shape[0] > 0:
+            d_lite_obs_world = viplanner.path_transformer(
+                d_lite_obs_cam.unsqueeze(0), raw_cam_position[0:1], raw_cam_orientation[0:1]
+            ).squeeze(0)
+        else:
+            d_lite_obs_world = d_lite_obs_cam  # empty [0, 3]
         # Resample D* Lite path to match VIPlanner's fixed waypoint count
         if d_lite_path_world.shape[1] != num_waypoints:
             d_lite_path_world = torch.nn.functional.interpolate(
@@ -239,8 +284,10 @@ def main():
         # unique_ids = torch.unique(raw_semantic)
         #print(f"[Sensors] Detected Semantic IDs: {unique_ids.tolist()}")
 
-        # draw path
+        # draw VIPlanner path + D* Lite overlay
+        draw_z = float(raw_cam_position[0][2]) - 0.4  # slightly above ground
         viplanner.debug_draw(paths, fear, goals)
+        draw_dstar_debug(d_lite_obs_world, d_lite_path_world, is_fear_reaction, draw_z)
         #print(f"[Demo] Path End (World): {paths[0, 0, :2].cpu().numpy()}")
 
 if __name__ == "__main__":
