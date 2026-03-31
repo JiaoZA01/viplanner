@@ -168,7 +168,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     if goal_cam[2].item() < 0:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        # Z is set to 0.0 so the car pivots locally rather than driving forward
+        turn_path = [[turn_dir * i * CELL_RES, 0.0, 0.0] for i in range(1, 6)]
         final_path = [[0.0, 0.0, 0.0]] + turn_path
         return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
 
@@ -222,7 +223,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     if not path_points:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        # Z is set to 0.0 so the car pivots locally rather than driving forward
+        turn_path = [[turn_dir * i * CELL_RES, 0.0, 0.0] for i in range(1, 6)]
         path_points = turn_path
         
     # Prepend robot origin to path. This ensures the output path has at least length >= 2, 

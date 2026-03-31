@@ -213,14 +213,19 @@ def main():
         else:
             fear_buffer = max(fear_buffer - 1, 0)
         
-        # Trigger fear reaction if buffer exceeds threshold
-        if fear_buffer > buffer_size:
+        # Trigger fear reaction if buffer exceeds threshold OR maintain reaction until buffer fully empties (Hysteresis)
+        if fear_buffer > buffer_size or (is_fear_reaction and fear_buffer > 0):
             if not is_fear_reaction:
                 print(f"[STUCK DETECTED]: Fear threshold exceeded! Switching to D* Lite fallback planner.")
                 print(f"[STUCK DETECTED]: Fear value: {fear_value:.3f}")
                 is_fear_reaction = True
             # [18744] FALLBACK: Use D* Lite path when neural network is uncertain
-            paths = d_lite_path_world
+            
+            # Handle batch/shape mismatch if num_envs > 1
+            if paths.shape[0] > 1:
+                paths = d_lite_path_world.repeat(paths.shape[0], 1, 1)
+            else:
+                paths = d_lite_path_world
             print(f"[FALLBACK]: Using D* Lite path instead of neural network path")
         else:
             if is_fear_reaction:
