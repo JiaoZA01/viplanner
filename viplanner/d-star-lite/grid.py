@@ -1,4 +1,5 @@
 from graph import Node, Graph
+import math
 
 
 class GridWorld(Graph):
@@ -46,22 +47,31 @@ class GridWorld(Graph):
             print(str_msg)
 
     def generateGraphFromGrid(self):
-        edge = 1
-        for i in range(len(self.cells)):      # i = row index (y direction)
+        for i in range(len(self.cells)):
             row = self.cells[i]
-            for j in range(len(row)):         # j = col index (x direction)
-                # Node name convention: x=col (j), y=row (i)
+            for j in range(len(row)):
                 node = Node('x' + str(j) + 'y' + str(i))
-                if i > 0:  # not top row
-                    node.parents['x' + str(j) + 'y' + str(i - 1)] = edge
-                    node.children['x' + str(j) + 'y' + str(i - 1)] = edge
-                if i + 1 < self.y_dim:  # not bottom row
-                    node.parents['x' + str(j) + 'y' + str(i + 1)] = edge
-                    node.children['x' + str(j) + 'y' + str(i + 1)] = edge
-                if j > 0:  # not left col
-                    node.parents['x' + str(j - 1) + 'y' + str(i)] = edge
-                    node.children['x' + str(j - 1) + 'y' + str(i)] = edge
-                if j + 1 < self.x_dim:  # not right col
-                    node.parents['x' + str(j + 1) + 'y' + str(i)] = edge
-                    node.children['x' + str(j + 1) + 'y' + str(i)] = edge
-                self.graph['x' + str(j) + 'y' + str(i)] = node
+
+                directions = [
+                    (0, -1, 1.0),
+                    (0,  1, 1.0),
+                    (-1, 0, 1.0),
+                    (1,  0, 1.0),
+                ]
+
+                if self.connect8:
+                    directions += [
+                        (-1, -1, math.sqrt(2)),
+                        (1, -1, math.sqrt(2)),
+                        (-1, 1, math.sqrt(2)),
+                        (1, 1, math.sqrt(2)),
+                    ]
+
+                for dx, dy, cost in directions:
+                    nx, ny = j + dx, i + dy
+                    if 0 <= nx < self.x_dim and 0 <= ny < self.y_dim:
+                        nid = f'x{nx}y{ny}'
+                        node.parents[nid] = cost
+                        node.children[nid] = cost
+
+                self.graph[f'x{j}y{i}'] = node

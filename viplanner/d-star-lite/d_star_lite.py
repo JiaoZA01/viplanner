@@ -133,7 +133,7 @@ def moveAndRescan(graph, queue, s_current, scan_range, k_m):
         s_new = nextInShortestPath(graph, s_current)
         new_coords = stateNameToCoords(s_new)
 
-        if(graph.cells[new_coords[1]][new_coords[0]] == -1):  # just ran into new obstacle
+        if graph.cells[new_coords[1]][new_coords[0]] < 0:  # just ran into new obstacle
             s_new = s_current  # need to hold tight and scan/replan first
 
         results = scanForObstacles(graph, queue, s_new, scan_range, k_m)

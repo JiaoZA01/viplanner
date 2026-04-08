@@ -2,6 +2,8 @@ import math
 import os
 import sys
 import torch
+import time
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../d-star-lite")))
 try:
@@ -17,14 +19,39 @@ except ImportError:
 # Value: True (obstacle seen here)
 # ---------------------------------------------------------------------------
 _world_memory = {}
-_MEM_RES = 0.25  # must match CELL_RES in get_d_star_path
-
+_MEM_RES = 0.1  # must match CELL_RES in get_d_star_path
+_last_grid_print_time = 0.0
 
 def clear_memory():
     """Call this to reset the world map (e.g. new episode)."""
     global _world_memory
     _world_memory = {}
 
+def print_world_memory_map():
+    global _world_memory
+
+    print("\n=== AGGREGATE WORLD MEMORY MAP ===")
+    if len(_world_memory) == 0:
+        print("empty")
+        print("==================================\n")
+        return
+
+    xs = [p[0] for p in _world_memory.keys()]
+    ys = [p[1] for p in _world_memory.keys()]
+
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    for gy in range(max_y, min_y - 1, -1):
+        row = []
+        for gx in range(min_x, max_x + 1):
+            if (gx, gy) in _world_memory:
+                row.append("x")
+            else:
+                row.append("o")
+        print("".join(row))
+
+    print("==================================\n")
 
 def _quat_to_rot_matrix(q):
     """
@@ -82,7 +109,7 @@ def _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES):
         grid_x = int(xc / CELL_RES + X_DIM / 2)
         grid_y = int(zc / CELL_RES)
         if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-            INFLATION_RADIUS_M = 1.5
+            INFLATION_RADIUS_M = 0.2
             inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
             _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
     return graph
@@ -119,6 +146,27 @@ def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
             break
     return path_points
 
+def _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
+    for pt in path_points[:check_n]:
+        gx = int(pt[0] / CELL_RES + X_DIM / 2)
+        gy = int(pt[2] / CELL_RES)
+        if _is_near_obstacle(graph.cells, gx, gy, clearance_cells):
+            return False
+    return True
+
+def _is_near_obstacle(cells, gx, gy, radius_cells):
+    y_dim = len(cells)
+    x_dim = len(cells[0]) if y_dim > 0 else 0
+
+    for dy in range(-radius_cells, radius_cells + 1):
+        for dx in range(-radius_cells, radius_cells + 1):
+            nx = gx + dx
+            ny = gy + dy
+            if 0 <= nx < x_dim and 0 <= ny < y_dim:
+                if cells[ny][nx] < 0:
+                    return True
+    return False
+
 
 def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_orientation=None):
     """
@@ -132,8 +180,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     """
     global _world_memory
 
-    X_DIM, Y_DIM = 40, 40
-    CELL_RES = 0.25  # 0.25 m/cell → 10 m x 10 m local grid
+    X_DIM, Y_DIM = 80, 80
+    CELL_RES = 0.1  # 0.25 m/cell → 10 m x 10 m local grid
 
     # ------------------------------------------------------------------
     # Precompute rotation matrix and camera XY position for frame transforms
@@ -171,7 +219,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             grid_x = int(x / CELL_RES + X_DIM / 2)
             grid_y = int(z / CELL_RES)
             if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-                INFLATION_RADIUS_M = 1.5   # example: 0.5 m
+                INFLATION_RADIUS_M = 0.2   # example: 0.5 m
                 inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
                 _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
                 # Update persistent world memory
@@ -180,7 +228,20 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
                     mgx = math.floor(wx / _MEM_RES)
                     mgy = math.floor(wy / _MEM_RES)
                     _world_memory[(mgx, mgy)] = True
-
+    
+    # ------------------------------------------------------------------
+    # DEBUG: print occupancy grid
+    # 0  = free
+    # -1 = obstacle / inflated obstacle
+    # ------------------------------------------------------------------
+    global _last_grid_print_time
+    now = time.time()
+    if now - _last_grid_print_time >= 2.0:
+        print("\n=== OCCUPANCY GRID ===")
+        print_world_memory_map()
+        print("======================\n")
+        _last_grid_print_time = now
+    
     # ------------------------------------------------------------------
     # Handle goal behind robot
     # ------------------------------------------------------------------
@@ -213,6 +274,9 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     computeShortestPath(graph, queue, s_start, k_m)
 
     path_points = _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES)
+    
+    if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
+        path_points = []
 
     # ------------------------------------------------------------------
     # Fallback: replan using world memory when current view is fully blocked
@@ -230,6 +294,9 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
         computeShortestPath(mem_graph, mem_queue, s_start, mem_k_m)
 
         path_points = _extract_path(mem_graph, s_start, s_goal, X_DIM, CELL_RES)
+        
+        if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
+            path_points = []
         if path_points:
             print(f"[D* Memory] Found path via memory ({len(path_points)} waypoints)")
         else:
