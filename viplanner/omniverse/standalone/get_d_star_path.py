@@ -128,6 +128,38 @@ def _inflate_obstacle_cells(cells, cx, cy, radius_cells):
                 if dx * dx + dy * dy <= radius_cells * radius_cells:
                     cells[ny][nx] = -1
 
+def _get_nearest_free_cell(cells, cx, cy, max_radius=10):
+    """
+    Performs a Breadth-First Search (BFS) to find the nearest unoccupied 
+    cell if the requested coordinate is inside an obstacle.
+    """
+    y_dim = len(cells)
+    x_dim = len(cells[0]) if y_dim > 0 else 0
+    
+    # 1. Collision Check
+    if cells[cy][cx] != -1:
+        return cx, cy
+
+    # 2. Nearest Free Cell Search (BFS)
+    queue = [(cx, cy)]
+    visited = set([(cx, cy)])
+
+    while queue:
+        curr_x, curr_y = queue.pop(0)
+        
+        if cells[curr_y][curr_x] != -1:
+            return curr_x, curr_y
+            
+        if max(abs(curr_x - cx), abs(curr_y - cy)) >= max_radius:
+            continue
+            
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            nx, ny = curr_x + dx, curr_y + dy
+            if 0 <= nx < x_dim and 0 <= ny < y_dim and (nx, ny) not in visited:
+                visited.add((nx, ny))
+                queue.append((nx, ny))
+                
+    return cx, cy  # Fallback if entirely enclosed
 
 def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
     """Run path extraction from s_start to s_goal, return list of [x, 0, z] points."""
@@ -247,19 +279,25 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     if goal_cam[2].item() < 0:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        turn_path = [[turn_dir * i * CELL_RES, 0.0, i * CELL_RES] for i in range(1, 6)]
         final_path = [[0.0, 0.0, 0.0]] + turn_path
         return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
 
     # ------------------------------------------------------------------
     # Setup start / goal in local grid
     # ------------------------------------------------------------------
-    s_start = f"x{int(X_DIM / 2)}y0"
     gx = int(goal_cam[0].item() / CELL_RES + X_DIM / 2)
     gy = int(goal_cam[2].item() / CELL_RES)
     gx = max(0, min(X_DIM - 1, gx))
     gy = max(0, min(Y_DIM - 1, gy))
+
+    # 3. Reassignment: Smart Goal Clamping via BFS
+    gx, gy = _get_nearest_free_cell(graph.cells, gx, gy)
     s_goal = f"x{gx}y{gy}"
+    
+    # Ensure the robot's starting position isn't accidentally swallowed by obstacle inflation
+    sx, sy = _get_nearest_free_cell(graph.cells, int(X_DIM / 2), 0)
+    s_start = f"x{sx}y{sy}"
 
     graph.setStart(s_start)
     graph.setGoal(s_goal)
@@ -284,8 +322,13 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     if not path_points and R is not None and len(_world_memory) > 0:
         print(f"[D* Memory] Current view fully blocked — replanning from {len(_world_memory)} remembered cells")
         mem_graph = _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES)
-        mem_graph.setStart(s_start)
-        mem_graph.setGoal(s_goal)
+        
+        # Smart Goal Clamping for the Memory Graph specifically
+        mem_gx, mem_gy = _get_nearest_free_cell(mem_graph.cells, gx, gy)
+        mem_sx, mem_sy = _get_nearest_free_cell(mem_graph.cells, int(X_DIM / 2), 0)
+        
+        mem_graph.setStart(f"x{mem_sx}y{mem_sy}")
+        mem_graph.setGoal(f"x{mem_gx}y{mem_gy}")
 
         mem_queue = []
         mem_k_m = 0
@@ -307,7 +350,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     if not path_points:
         turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        turn_path = [[turn_dir * i * CELL_RES, 0.0, i * CELL_RES] for i in range(1, 6)]
         path_points = turn_path
         
     # Prepend robot origin to path. This ensures the output path has at least length >= 2, 
