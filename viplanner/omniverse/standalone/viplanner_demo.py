@@ -207,7 +207,7 @@ def main():
         # if fear_print_counter % 5 == 0:
         #     print(f"[Fear] {fear_value:.4f}")
 
-        if fear_value > 0.7:
+        if fear_value > 0.0:
             fear_buffer = min(fear_buffer + 1, buffer_size + 1)
             print(f"[WARNING]: High fear detected: {fear_value:.3f} (buffer: {fear_buffer}/{buffer_size})")
         else:

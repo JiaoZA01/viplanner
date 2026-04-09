@@ -146,12 +146,23 @@ def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
             break
     return path_points
 
-def _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
-    for pt in path_points[:check_n]:
+def _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=2, check_n=None):
+    if check_n is None:
+        pts_to_check = path_points
+    else:
+        pts_to_check = path_points[:check_n]
+
+    for pt in pts_to_check:
         gx = int(pt[0] / CELL_RES + X_DIM / 2)
         gy = int(pt[2] / CELL_RES)
+
+        # path point outside grid -> reject
+        if gx < 0 or gx >= X_DIM or gy < 0 or gy >= len(graph.cells):
+            return False
+
         if _is_near_obstacle(graph.cells, gx, gy, clearance_cells):
             return False
+
     return True
 
 def _is_near_obstacle(cells, gx, gy, radius_cells):
@@ -234,19 +245,21 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # 0  = free
     # -1 = obstacle / inflated obstacle
     # ------------------------------------------------------------------
-    global _last_grid_print_time
-    now = time.time()
-    if now - _last_grid_print_time >= 2.0:
-        print("\n=== OCCUPANCY GRID ===")
-        print_world_memory_map()
-        print("======================\n")
-        _last_grid_print_time = now
+    #global _last_grid_print_time
+    #now = time.time()
+    #if now - _last_grid_print_time >= 2.0:
+    #    print("\n=== OCCUPANCY GRID ===")
+        #print_world_memory_map()
+        #for row in graph.cells:
+        #    print("".join("x" if cell < 0 else "_" for cell in row))
+    #    print("======================\n")
+    #    _last_grid_print_time = now
     
     # ------------------------------------------------------------------
     # Handle goal behind robot
     # ------------------------------------------------------------------
-    if goal_cam[2].item() < 0:
-        turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
+    if goal_cam[0].item() < 0:
+        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0
         turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
         final_path = [[0.0, 0.0, 0.0]] + turn_path
         return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
@@ -255,11 +268,69 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # Setup start / goal in local grid
     # ------------------------------------------------------------------
     s_start = f"x{int(X_DIM / 2)}y0"
-    gx = int(goal_cam[0].item() / CELL_RES + X_DIM / 2)
-    gy = int(goal_cam[2].item() / CELL_RES)
-    gx = max(0, min(X_DIM - 1, gx))
-    gy = max(0, min(Y_DIM - 1, gy))
+    raw_gx = int(goal_cam[0].item() / CELL_RES + X_DIM / 2)
+    raw_gy = int(goal_cam[1].item() / CELL_RES)
+    gx = max(0, min(X_DIM - 1, raw_gx))
+    gy = max(0, min(Y_DIM - 1, raw_gy))
     s_goal = f"x{gx}y{gy}"
+    
+    # ------------------------------------------------------------------
+    # DEBUG: print occupancy grid with ego + local goal + raw goal
+    # ------------------------------------------------------------------
+    global _last_grid_print_time
+    now = time.time()
+    if now - _last_grid_print_time >= 2.0:
+        start_x = X_DIM // 2
+        start_y = 0
+
+        print("\n=== OCCUPANCY GRID ===")
+        for y in range(Y_DIM):
+            row_chars = []
+            for x in range(X_DIM):
+                if x == start_x and y == start_y:
+                    row_chars.append("E")   # ego vehicle
+                elif x == gx and y == gy:
+                    row_chars.append("L")   # local clamped goal used by D* Lite
+                elif x == raw_gx and y == raw_gy:
+                    row_chars.append("R")   # raw projected goal before clamping
+                elif graph.cells[y][x] < 0:
+                    row_chars.append("x")   # obstacle
+                else:
+                    row_chars.append("_")   # free
+            print("".join(row_chars))
+
+        print(f"[Goal] raw projected goal cell: ({raw_gx}, {raw_gy})")
+        print(f"[Goal] local clamped goal cell: ({gx}, {gy})")
+        print(
+            f"[Goal] goal_cam: "
+            f"x={float(goal_cam[0]):.2f}, "
+            f"y={float(goal_cam[1]):.2f}, "
+            f"z={float(goal_cam[2]):.2f}"
+        )
+
+        if raw_gx < 0 or raw_gx >= X_DIM or raw_gy < 0 or raw_gy >= Y_DIM:
+            print("[Goal] raw projected goal is outside the local occupancy grid")
+
+        if cam_position is not None:
+            print(
+                f"[Ego] world position: "
+                f"x={float(cam_position[0]):.2f}, "
+                f"y={float(cam_position[1]):.2f}, "
+                f"z={float(cam_position[2]):.2f}"
+            )
+
+        print("======================\n")
+        
+        print("\n=== GOAL DEBUG ===")
+        print(f"goal_cam (meters): x={float(goal_cam[0]):.3f}, y={float(goal_cam[1]):.3f}, z={float(goal_cam[2]):.3f}")
+        print(f"CELL_RES = {CELL_RES}, X_DIM = {X_DIM}, Y_DIM = {Y_DIM}")
+        print(f"robot local grid center x = {X_DIM // 2}")
+        print(f"raw_gx = int({float(goal_cam[1]):.3f} / {CELL_RES} + {X_DIM // 2}) = {raw_gx}")
+        print(f"raw_gy = int({float(goal_cam[0]):.3f} / {CELL_RES}) = {raw_gy}")
+        print(f"clamped gx, gy = ({gx}, {gy})")
+        print(f"s_goal = {s_goal}")
+        print("==============\n")
+        _last_grid_print_time = now
 
     graph.setStart(s_start)
     graph.setGoal(s_goal)
@@ -275,7 +346,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
 
     path_points = _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES)
     
-    if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
+    if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=None):
         path_points = []
 
     # ------------------------------------------------------------------
@@ -295,7 +366,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
 
         path_points = _extract_path(mem_graph, s_start, s_goal, X_DIM, CELL_RES)
         
-        if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=6):
+        if path_points and not _path_has_clearance(mem_graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=None):
             path_points = []
         if path_points:
             print(f"[D* Memory] Found path via memory ({len(path_points)} waypoints)")
@@ -306,7 +377,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # Last resort: turn in place toward goal side
     # ------------------------------------------------------------------
     if not path_points:
-        turn_dir = 1.0 if goal_cam[0].item() >= 0 else -1.0
+        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0
         turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
         path_points = turn_path
         

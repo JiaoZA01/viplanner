@@ -90,7 +90,7 @@ class TerrainSceneCfg(InteractiveSceneCfg):
     depth_camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/limo/chassis_link/depth_camera",
         offset=CameraCfg.OffsetCfg(
-            pos=(0.65, 0.0, 0.4),
+            pos=(0.65, 0.0, 0.8),
             rot=(-0.5, 0.5, -0.5, 0.5),
         ),
         spawn=sim_utils.PinholeCameraCfg(
