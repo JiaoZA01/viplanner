@@ -130,7 +130,7 @@ def _inflate_obstacle_cells(cells, cx, cy, radius_cells):
 
 
 def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
-    """Run path extraction from s_start to s_goal, return list of [x, 0, z] points."""
+    """Run path extraction from s_start to s_goal, return list of [front, horizontal, height] points."""
     path_points = []
     curr = s_start
     for _ in range(100):
@@ -139,9 +139,12 @@ def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
         try:
             curr = nextInShortestPath(graph, curr)
             coords = stateNameToCoords(curr)
-            x_w = (coords[0] - X_DIM / 2) * CELL_RES
-            z_w = coords[1] * CELL_RES
-            path_points.append([x_w, 0.0, z_w])
+            
+            horizontal_y = (coords[0] - X_DIM / 2) * CELL_RES  # Grid X maps to vehicle Y (horizontal)
+            forward_x = coords[1] * CELL_RES                   # Grid Y maps to vehicle X (front)
+            
+            # Output in vehicle frame: [X (front), Y (horizontal), Z (height)]
+            path_points.append([forward_x, horizontal_y, 0.0])
         except Exception:
             break
     return path_points
@@ -153,8 +156,9 @@ def _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=2, 
         pts_to_check = path_points[:check_n]
 
     for pt in pts_to_check:
-        gx = int(pt[0] / CELL_RES + X_DIM / 2)
-        gy = int(pt[2] / CELL_RES)
+        # pt is [front, horizontal, height].
+        gx = int(pt[1] / CELL_RES + X_DIM / 2)  # pt[1] is horizontal -> maps to Grid X
+        gy = int(pt[0] / CELL_RES)              # pt[0] is front -> maps to Grid Y
 
         # path point outside grid -> reject
         if gx < 0 or gx >= X_DIM or gy < 0 or gy >= len(graph.cells):
@@ -258,9 +262,10 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     # Handle goal behind robot
     # ------------------------------------------------------------------
-    if goal_cam[0].item() < 0:
-        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+    if goal_cam[0].item() < 0:  # cam0 is depth, < 0 correctly means behind
+        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0  # cam1 is horizontal
+        # Path format must be: [front(x), horizontal(y), height(z)]
+        turn_path = [[CELL_RES, turn_dir * i * CELL_RES, 0.0] for i in range(1, 6)]
         final_path = [[0.0, 0.0, 0.0]] + turn_path
         return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
 
@@ -268,8 +273,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # Setup start / goal in local grid
     # ------------------------------------------------------------------
     s_start = f"x{int(X_DIM / 2)}y0"
-    raw_gx = int(goal_cam[0].item() / CELL_RES + X_DIM / 2)
-    raw_gy = int(goal_cam[1].item() / CELL_RES + Y_DIM / 2)
+    raw_gx = int(goal_cam[1].item() / CELL_RES+ Y_DIM / 2)  # cam1 is horizontal
+    raw_gy = int(goal_cam[0].item() / CELL_RES )              # cam0 is depth (front). Starts at 0, no offset needed
     gx = max(0, min(X_DIM - 1, raw_gx))
     gy = max(0, min(Y_DIM - 1, raw_gy))
  
@@ -290,7 +295,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             for x in range(X_DIM):
                 if x == start_x and y == start_y:
                     row_chars.append("E")   # ego vehicle
-                elif x == gy and y == gx:
+                elif x == gx and y == gy:
                     row_chars.append("L")   # local clamped goal used by D* Lite
                 elif x == raw_gx and y == raw_gy:
                     row_chars.append("R")   # raw projected goal before clamping
@@ -347,7 +352,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
 
     path_points = _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES)
     
-    if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=None):
+    if path_points and not _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=0, check_n=None):
         path_points = []
 
     # ------------------------------------------------------------------
@@ -367,19 +372,20 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
 
         path_points = _extract_path(mem_graph, s_start, s_goal, X_DIM, CELL_RES)
         
-        if path_points and not _path_has_clearance(mem_graph, path_points, X_DIM, CELL_RES, clearance_cells=1, check_n=None):
+        if path_points and not _path_has_clearance(mem_graph, path_points, X_DIM, CELL_RES, clearance_cells=0, check_n=None):
             path_points = []
         if path_points:
             print(f"[D* Memory] Found path via memory ({len(path_points)} waypoints)")
         else:
             print("[D* Memory] Memory replan also failed — turning toward goal")
 
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
     # Last resort: turn in place toward goal side
     # ------------------------------------------------------------------
     if not path_points:
-        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0
-        turn_path = [[turn_dir * i * CELL_RES, 0.0, CELL_RES] for i in range(1, 6)]
+        turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0  # cam1 is horizontal
+        # Path format must be: [front(x), horizontal(y), height(z)]
+        turn_path = [[CELL_RES, turn_dir * i * CELL_RES, 0.0] for i in range(1, 6)]
         path_points = turn_path
         
     # Prepend robot origin to path. This ensures the output path has at least length >= 2, 
