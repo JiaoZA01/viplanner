@@ -109,7 +109,7 @@ def _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES):
         grid_x = int(xc / CELL_RES + X_DIM / 2)
         grid_y = int(zc / CELL_RES)
         if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-            INFLATION_RADIUS_M = 0.2
+            INFLATION_RADIUS_M = 0.45
             inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
             _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
     return graph
@@ -195,7 +195,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     """
     global _world_memory
 
-    X_DIM, Y_DIM = 80, 80
+    X_DIM, Y_DIM = 120, 120
     CELL_RES = 0.1  # 0.25 m/cell → 10 m x 10 m local grid
 
     # ------------------------------------------------------------------
@@ -220,7 +220,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     for v in range(0, H, step):
         for u in range(0, W, step):
             z = d_np[v, u]
-            if z <= 0.1 or z > 9.0:
+            if z <= 0.2 or z > 9.0:
                 continue
 
             # Prevent mapping the floor/ground as an obstacle:
@@ -234,7 +234,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             grid_x = int(x / CELL_RES + X_DIM / 2)
             grid_y = int(z / CELL_RES)
             if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-                INFLATION_RADIUS_M = 0.2   # example: 0.5 m
+                INFLATION_RADIUS_M = 0.45   # example: 0.5 m
                 inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
                 _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
                 # Update persistent world memory
