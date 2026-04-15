@@ -269,9 +269,10 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # ------------------------------------------------------------------
     s_start = f"x{int(X_DIM / 2)}y0"
     raw_gx = int(goal_cam[0].item() / CELL_RES + X_DIM / 2)
-    raw_gy = int(goal_cam[1].item() / CELL_RES)
+    raw_gy = int(goal_cam[1].item() / CELL_RES + Y_DIM / 2)
     gx = max(0, min(X_DIM - 1, raw_gx))
     gy = max(0, min(Y_DIM - 1, raw_gy))
+ 
     s_goal = f"x{gx}y{gy}"
     
     # ------------------------------------------------------------------
@@ -289,7 +290,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             for x in range(X_DIM):
                 if x == start_x and y == start_y:
                     row_chars.append("E")   # ego vehicle
-                elif x == gx and y == gy:
+                elif x == gy and y == gx:
                     row_chars.append("L")   # local clamped goal used by D* Lite
                 elif x == raw_gx and y == raw_gy:
                     row_chars.append("R")   # raw projected goal before clamping
@@ -325,8 +326,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
         print(f"goal_cam (meters): x={float(goal_cam[0]):.3f}, y={float(goal_cam[1]):.3f}, z={float(goal_cam[2]):.3f}")
         print(f"CELL_RES = {CELL_RES}, X_DIM = {X_DIM}, Y_DIM = {Y_DIM}")
         print(f"robot local grid center x = {X_DIM // 2}")
-        print(f"raw_gx = int({float(goal_cam[1]):.3f} / {CELL_RES} + {X_DIM // 2}) = {raw_gx}")
-        print(f"raw_gy = int({float(goal_cam[0]):.3f} / {CELL_RES}) = {raw_gy}")
+        print(f"raw_gx = int({float(goal_cam[0]):.3f} / {CELL_RES} + {X_DIM // 2}) = {raw_gx}")
+        print(f"raw_gy = int({float(goal_cam[1]):.3f} / {CELL_RES}) = {raw_gy}")
         print(f"clamped gx, gy = ({gx}, {gy})")
         print(f"s_goal = {s_goal}")
         print("==============\n")
