@@ -157,7 +157,7 @@ class CommandsCfg:
         robot_attr="robot",
         lookAheadDistance=0.4, #I am changing lookahead distance
         debug_vis=True,
-        maxSpeed=10,
+        maxSpeed=2,
     )
     
 

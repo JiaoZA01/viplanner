@@ -48,12 +48,53 @@ from omni.viplanner.viplanner import VIPlannerAlgo
 from pxr import UsdGeom
 
 """D start Lite"""
-from get_d_star_path import get_d_star_path
+import get_d_star_path as d_star_module
 
 """
 Main
 """
 
+
+
+
+#`adding a helper to check if there is a collision
+import numpy as np
+import get_d_star_path # Import to access the memory map
+
+def is_viplanner_path_colliding(path_tensor, clearance_radius=0.2):
+    """
+    Checks if the predicted viplanner path intersects with known obstacles.
+    """
+    path_pts = path_tensor.cpu().numpy()
+    
+    # Use the alias here
+    world_memory = d_star_module._world_memory
+    mem_res = d_star_module._MEM_RES
+    
+    for i in range(len(path_pts) - 1):
+        p1 = path_pts[i][:2]
+        p2 = path_pts[i+1][:2]
+        
+        dist = np.linalg.norm(p2 - p1)
+        num_samples = max(2, int(dist / (mem_res / 2.0)))
+        
+        for t in np.linspace(0, 1, num_samples):
+            pt = p1 + t * (p2 - p1)
+            
+            grid_radius = int(np.ceil(clearance_radius / mem_res))
+            center_x = int(round(pt[0] / mem_res))
+            center_y = int(round(pt[1] / mem_res))
+            
+            for dx in range(-grid_radius, grid_radius + 1):
+                for dy in range(-grid_radius, grid_radius + 1):
+                    if (center_x + dx, center_y + dy) in world_memory:
+                        return True # Collision detected!
+                        
+    return False
+    
+    
+    
+    
 
 def main():
     """Imports all legged robots supported in IsaacLab and applies zero actions."""
@@ -135,7 +176,7 @@ def main():
 
     # [18744] Fear reaction tracking for stuck detection
     fear_buffer = 0
-    buffer_size = 3  # Number of consecutive high-fear frames to trigger reaction
+    buffer_size = 0  # Number of consecutive high-fear frames to trigger reaction
     is_fear_reaction = False
 
     # Simulate physics
@@ -175,7 +216,14 @@ def main():
         
         # [18744] Run D* Lite Planner
         # Using the first environment's data (index 0) for the demo
-        d_lite_path_cam = get_d_star_path(raw_depth[0], goal_cam_frame[0], depth_intrinsic, raw_cam_position[0], raw_cam_orientation[0])
+        # [18744] Run D* Lite Planner
+        d_lite_path_cam = d_star_module.get_d_star_path(
+            raw_depth[0], 
+            goal_cam_frame[0], 
+            depth_intrinsic, 
+            raw_cam_position[0], 
+            raw_cam_orientation[0]
+        )
 
         # [18744] Run ViPlanner
         _, paths, fear = viplanner.plan_dual(
@@ -207,24 +255,40 @@ def main():
         # if fear_print_counter % 5 == 0:
         #     print(f"[Fear] {fear_value:.4f}")
 
+
+
+# --- PATH COLLISION CHECK ---
+        viplanner_world_path = paths[0] 
+        
+        path_is_colliding = is_viplanner_path_colliding(
+            viplanner_world_path, 
+            clearance_radius=0.2
+        )
+
+
+
+
         if fear_value > 0.0:
             fear_buffer = min(fear_buffer + 1, buffer_size + 1)
             print(f"[WARNING]: High fear detected: {fear_value:.3f} (buffer: {fear_buffer}/{buffer_size})")
         else:
             fear_buffer = max(fear_buffer - 1, 0)
         
-        # Trigger fear reaction if buffer exceeds threshold
-        if fear_buffer > buffer_size:
-            if not is_fear_reaction:
-                print(f"[STUCK DETECTED]: Fear threshold exceeded! Switching to D* Lite fallback planner.")
-                print(f"[STUCK DETECTED]: Fear value: {fear_value:.3f}")
-                is_fear_reaction = True
-            # [18744] FALLBACK: Use D* Lite path when neural network is uncertain
-            paths = d_lite_path_world
+# Trigger fallback if stuck (fear) OR if viplanner path goes through an obstacle
+        if fear_buffer >= buffer_size or path_is_colliding:
+            if path_is_colliding:
+                print("[COLLISION DETECTED]: ViPlanner path intersects obstacle! Switching to D* Lite.")
+            elif not is_fear_reaction:
+                print(f"[STUCK DETECTED]: Fear threshold exceeded! Switching to D* Lite.")
+                
+            is_fear_reaction = True
+            
+            # [18744] FALLBACK: Use D* Lite path
+            paths = d_lite_path_world 
             print(f"[FALLBACK]: Using D* Lite path instead of neural network path")
         else:
             if is_fear_reaction:
-                print(f"[RECOVERY]: Fear subsided (buffer: {fear_buffer}/{buffer_size}), resuming neural network planner.")
+                print(f"[RECOVERY]: Clear path found, resuming neural network planner.")
                 is_fear_reaction = False
             # VIPlanner path is already in `paths` — no override needed
         

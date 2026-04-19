@@ -25,7 +25,7 @@ class CarlaSemanticCostMapping:
     floor: float = OBSTACLE_COST
     vehicle: float = OBSTACLE_COST
     building: float = OBSTACLE_COST
-    wall: float = OBSTACLE_COST
+    wall: float = 10.0
     fence: float = OBSTACLE_COST
     pole: float = OBSTACLE_COST
     traffic_sign: float = OBSTACLE_COST

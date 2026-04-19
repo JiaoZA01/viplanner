@@ -563,7 +563,7 @@ config:
   - 2n8kARJN3HM_cam_mount
   epochs: 100
   factor: 0.5
-  fear_ahead_dist: 2.5
+  fear_ahead_dist: 10
   file_name: new_cam_mount_combi_lossWidthMod_wgoal4.0_warehouse
   file_path: /home/pascal/SemNav/imperative_learning
   gpu_id: 0

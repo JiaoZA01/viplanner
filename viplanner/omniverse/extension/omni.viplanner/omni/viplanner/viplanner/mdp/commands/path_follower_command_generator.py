@@ -143,6 +143,19 @@ class PathFollowerCommandGenerator(CommandTerm):
                 torch.arange(self.num_envs), sorted_dis_idx[torch.arange(self.num_envs), dis_max_idx], :2
             ]
         direction_diff = -torch.atan2(dis_max_poses[:, 1], dis_max_poses[:, 0])
+        # --- ADD THESE DEBUG PRINTS ---
+        # 1. Print the first few points of the path to see if the planner thinks "straight ahead" is a straight line
+        print(f"[DEBUG] First 3 path points: {paths[0, :3, :2].cpu().numpy()}")
+        
+        # 2. Print the exact (X, Y) coordinate the robot is currently targeting
+        print(f"[DEBUG] Target Lookahead Pose (X, Y): {dis_max_poses[0].cpu().numpy()}")
+        
+        # 3. Print the calculated angular error (in radians)
+        print(f"[DEBUG] Calculated Direction Diff: {direction_diff[0].item():.4f}")
+        
+        # 4. (Further down) after vehicleYawRate is calculated, print the command
+        # print(f"[DEBUG] Commanded Yaw Rate: {vehicleYawRate[0].item():.4f}")
+        # ------------------------------
 
         # decide whether to drive forward or backward
         if self.cfg.two_way_drive:

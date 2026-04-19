@@ -109,7 +109,7 @@ def _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES):
         grid_x = int(xc / CELL_RES + X_DIM / 2)
         grid_y = int(zc / CELL_RES)
         if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-            INFLATION_RADIUS_M = 0.45
+            INFLATION_RADIUS_M = 0.2
             inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
             _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
     return graph
@@ -140,7 +140,7 @@ def _extract_path(graph, s_start, s_goal, X_DIM, CELL_RES):
             curr = nextInShortestPath(graph, curr)
             coords = stateNameToCoords(curr)
             
-            horizontal_y = (coords[0] - X_DIM / 2) * CELL_RES  # Grid X maps to vehicle Y (horizontal)
+            horizontal_y = -(coords[0] - X_DIM / 2) * CELL_RES  # Grid X maps to vehicle Y (horizontal)
             forward_x = coords[1] * CELL_RES                   # Grid Y maps to vehicle X (front)
             
             # Output in vehicle frame: [X (front), Y (horizontal), Z (height)]
@@ -195,7 +195,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     """
     global _world_memory
 
-    X_DIM, Y_DIM = 120, 120
+    X_DIM, Y_DIM = 80,80
     CELL_RES = 0.1  # 0.25 m/cell → 10 m x 10 m local grid
 
     # ------------------------------------------------------------------
@@ -231,10 +231,21 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
                 continue
 
             x = (u - cx) * z / fx
+            # --- NEW: FILTER OUT THE GOAL CUBE ---
+            # Assuming you applied the flipped X-axis fix (-goal_cam[1])
+            goal_x = -goal_cam[1].item() 
+            goal_z = goal_cam[0].item()  # cam0 is depth
+            
+            # Calculate distance from the current depth point to the goal center
+            dist_to_goal = math.sqrt((x - goal_x)**2 + (z - goal_z)**2)
+            
+            # If the point is within 0.4 meters (cube size + margin), ignore it
+            if dist_to_goal < 0.4:
+                continue
             grid_x = int(x / CELL_RES + X_DIM / 2)
             grid_y = int(z / CELL_RES)
             if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-                INFLATION_RADIUS_M = 0.45   # example: 0.5 m
+                INFLATION_RADIUS_M = 0.2   # example: 0.5 m
                 inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
                 _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
                 # Update persistent world memory
@@ -273,7 +284,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     # Setup start / goal in local grid
     # ------------------------------------------------------------------
     s_start = f"x{int(X_DIM / 2)}y0"
-    raw_gx = int(goal_cam[1].item() / CELL_RES+ Y_DIM / 2)  # cam1 is horizontal
+    raw_gx = int(-goal_cam[1].item() / CELL_RES+ Y_DIM / 2)  # cam1 is horizontal
     raw_gy = int(goal_cam[0].item() / CELL_RES )              # cam0 is depth (front). Starts at 0, no offset needed
     gx = max(0, min(X_DIM - 1, raw_gx))
     gy = max(0, min(Y_DIM - 1, raw_gy))
@@ -340,6 +351,13 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
 
     graph.setStart(s_start)
     graph.setGoal(s_goal)
+    
+    start_x = X_DIM // 2
+    start_y = 0
+    for cy in range(start_y - 1, start_y + 2):
+        for cx in range(start_x - 1, start_x + 2):
+            if 0 <= cx < X_DIM and 0 <= cy < Y_DIM:
+                graph.cells[cy][cx] = 0
 
     # ------------------------------------------------------------------
     # Run D* Lite on current view

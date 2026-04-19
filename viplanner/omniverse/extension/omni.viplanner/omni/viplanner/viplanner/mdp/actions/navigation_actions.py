@@ -141,7 +141,7 @@ class NavigationAction(ActionTerm):
                     #print(f"[NavAction] GOAL: {dist_to_final_goal:.2f}m), stop")
             else:
                 v_raw = torch.clamp(1.2 * x_err, 0.0, 1.0) 
-                w_raw = torch.clamp(5.0 * angle_error, -1.5, 1.5)
+                w_raw = torch.clamp(5 * angle_error, -1.5, 1.5)
                 
              
                 v_scale = torch.clamp(1.0 - torch.abs(angle_error) / 0.6, 0.0, 1.0)
