@@ -157,7 +157,8 @@ class CommandsCfg:
         robot_attr="robot",
         lookAheadDistance=0.4, #I am changing lookahead distance
         debug_vis=True,
-        maxSpeed=2,
+        maxSpeed=1,
+        path_frame="world",
     )
     
 
@@ -183,7 +184,7 @@ class ViPlannerBaseCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         """Post initialization."""
         # general settings
-        self.decimation = 20  # 10 Hz
+        self.decimation = 25  # 10 Hz
         self.episode_length_s = 60.0
         # simulation settings
         self.sim.dt = 0.005

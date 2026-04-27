@@ -176,8 +176,10 @@ def main():
 
     # [18744] Fear reaction tracking for stuck detection
     fear_buffer = 0
-    buffer_size = 0  # Number of consecutive high-fear frames to trigger reaction
+    buffer_size = 4  # Number of consecutive high-fear frames to trigger reaction
     is_fear_reaction = False
+    replan_cnt = 0
+    saved_d_lite_path = None
 
     # Simulate physics
     while simulation_app.is_running():
@@ -229,7 +231,8 @@ def main():
         _, paths, fear = viplanner.plan_dual(
             obs["planner_image"]["depth_measurement"], obs["planner_image"]["semantic_measurement"], goal_cam_frame
         )
-
+	
+	
         # [18744] convert waypoints from the camera's frame into the world's coordinate frame
         paths = viplanner.path_transformer(
             paths, obs["planner_transform"]["cam_position"], obs["planner_transform"]["cam_orientation"]
@@ -268,13 +271,13 @@ def main():
 
 
 
-        if fear_value > 0.0:
+        if fear_value > 0.5:
             fear_buffer = min(fear_buffer + 1, buffer_size + 1)
             print(f"[WARNING]: High fear detected: {fear_value:.3f} (buffer: {fear_buffer}/{buffer_size})")
         else:
             fear_buffer = max(fear_buffer - 1, 0)
         
-# Trigger fallback if stuck (fear) OR if viplanner path goes through an obstacle
+        replan_cnt -= 1
         if fear_buffer >= buffer_size or path_is_colliding:
             if path_is_colliding:
                 print("[COLLISION DETECTED]: ViPlanner path intersects obstacle! Switching to D* Lite.")
@@ -283,14 +286,31 @@ def main():
                 
             is_fear_reaction = True
             
-            # [18744] FALLBACK: Use D* Lite path
-            paths = d_lite_path_world 
-            print(f"[FALLBACK]: Using D* Lite path instead of neural network path")
+
+            if saved_d_lite_path is not None:
+                saved_path_is_unsafe = is_viplanner_path_colliding(saved_d_lite_path[0], clearance_radius=0.0) 
+                
+                if saved_path_is_unsafe:
+                    print("[WARNING]: Static D* Lite path is blocked! Forcing a replan...")
+                    saved_d_lite_path = None  
+                    replan_counter = 0        
+                    
+            if saved_d_lite_path is None or replan_counter <= 0:
+                saved_d_lite_path = d_lite_path_world.clone()
+                replan_counter = 60000  
+                print(f"[FALLBACK]: Re-planned static D* Lite path. Cooldown reset to {replan_counter}.")
+            
+            # 3. Apply the saved static path
+            paths = saved_d_lite_path
+            
         else:
             if is_fear_reaction:
                 print(f"[RECOVERY]: Clear path found, resuming neural network planner.")
                 is_fear_reaction = False
-            # VIPlanner path is already in `paths` — no override needed
+                saved_d_lite_path = None
+                replan_counter = 0
+
+
         
         # raw_semantic = obs["planner_image"]["semantic_measurement"]         # Shape: [Num_Envs, H, W]
 

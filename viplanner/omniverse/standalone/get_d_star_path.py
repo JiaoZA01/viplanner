@@ -5,6 +5,8 @@ import torch
 import time
 
 
+
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../d-star-lite")))
 try:
     from grid import GridWorld
@@ -21,6 +23,7 @@ except ImportError:
 _world_memory = {}
 _MEM_RES = 0.1  # must match CELL_RES in get_d_star_path
 _last_grid_print_time = 0.0
+
 
 def clear_memory():
     """Call this to reset the world map (e.g. new episode)."""
@@ -109,7 +112,7 @@ def _build_grid_from_memory(cam_pos_xy, R, X_DIM, Y_DIM, CELL_RES):
         grid_x = int(xc / CELL_RES + X_DIM / 2)
         grid_y = int(zc / CELL_RES)
         if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-            INFLATION_RADIUS_M = 0.2
+            INFLATION_RADIUS_M = 0.3
             inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
             _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
     return graph
@@ -157,7 +160,7 @@ def _path_has_clearance(graph, path_points, X_DIM, CELL_RES, clearance_cells=2, 
 
     for pt in pts_to_check:
         # pt is [front, horizontal, height].
-        gx = int(pt[1] / CELL_RES + X_DIM / 2)  # pt[1] is horizontal -> maps to Grid X
+        gx = int(-pt[1] / CELL_RES + X_DIM / 2)  # pt[1] is horizontal -> maps to Grid X
         gy = int(pt[0] / CELL_RES)              # pt[0] is front -> maps to Grid Y
 
         # path point outside grid -> reject
@@ -195,7 +198,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
     """
     global _world_memory
 
-    X_DIM, Y_DIM = 80,80
+    X_DIM, Y_DIM = 30,30
     CELL_RES = 0.1  # 0.25 m/cell → 10 m x 10 m local grid
 
     # ------------------------------------------------------------------
@@ -245,7 +248,7 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
             grid_x = int(x / CELL_RES + X_DIM / 2)
             grid_y = int(z / CELL_RES)
             if 0 <= grid_x < X_DIM and 0 <= grid_y < Y_DIM:
-                INFLATION_RADIUS_M = 0.2   # example: 0.5 m
+                INFLATION_RADIUS_M = 0.3   # example: 0.5 m
                 inflation_cells = max(1, int(round(INFLATION_RADIUS_M / CELL_RES)))
                 _inflate_obstacle_cells(graph.cells, grid_x, grid_y, inflation_cells)
                 # Update persistent world memory
@@ -277,8 +280,8 @@ def get_d_star_path(depth_tensor, goal_cam, intrinsics, cam_position=None, cam_o
         turn_dir = 1.0 if goal_cam[1].item() >= 0 else -1.0  # cam1 is horizontal
         # Path format must be: [front(x), horizontal(y), height(z)]
         turn_path = [[CELL_RES, turn_dir * i * CELL_RES, 0.0] for i in range(1, 6)]
-        final_path = [[0.0, 0.0, 0.0]] + turn_path
-        return torch.tensor(final_path, dtype=torch.float32, device=depth_tensor.device)
+        #final_path = [[0.0, 0.0, 0.0]] + turn_path
+        return torch.tensor(turn_path, dtype=torch.float32, device=depth_tensor.device)
 
     # ------------------------------------------------------------------
     # Setup start / goal in local grid
